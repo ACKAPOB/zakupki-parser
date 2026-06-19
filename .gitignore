@@ -1,0 +1,27 @@
+# Конфиг с паролями (ВАЖНО!)
+config.yaml
+
+# Папки с отчетами и логами
+output/
+logs/
+
+# Python
+*.pyc
+__pycache__/
+venv/
+.env
+*.pyo
+
+# Логи
+*.log
+web.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
