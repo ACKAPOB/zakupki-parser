@@ -11,6 +11,7 @@ import argparse
 import json
 import time
 import yaml
+import glob
 
 import requests
 from bs4 import BeautifulSoup
@@ -62,13 +63,35 @@ def parse_arguments():
 
 
 def get_output_filename():
-    date_str = datetime.now().strftime("%d.%m.%Y")
-    output_dir = CONFIG['excel']['output_dir']
-    pattern = f"zakupki_{date_str}_"
-    existing = [f for f in os.listdir(output_dir) if f.startswith(pattern) and f.endswith('.xlsx')]
-    next_num = len(existing) + 1
-    return os.path.join(output_dir, f"zakupki_{date_str}_{next_num:02d}.xlsx")
-
+    """Генерирует имя файла в папке output/ДД.ММ.ГГГГ_NN/"""
+    now = datetime.now()
+    date_str = now.strftime("%d.%m.%Y")
+    
+    # Проверяем существующие папки за сегодня
+    pattern = f"output/{date_str}_*"
+    existing_folders = glob.glob(pattern)
+    
+    if not existing_folders:
+        folder_number = 1
+    else:
+        numbers = []
+        for folder in existing_folders:
+            match = re.search(r'(\d{2}\.\d{2}\.\d{4})_(\d+)', folder)
+            if match:
+                numbers.append(int(match.group(2)))
+        folder_number = max(numbers) + 1 if numbers else 1
+    
+    # Создаём папку
+    folder_name = f"{date_str}_{folder_number:02d}"
+    folder_path = os.path.join("output", folder_name)
+    os.makedirs(folder_path, exist_ok=True)
+    
+    # Имя файла с номером внутри папки
+    existing_files = [f for f in os.listdir(folder_path) if f.startswith(f"zakupki_{date_str}_")]
+    file_number = len(existing_files) + 1
+    
+    filename = os.path.join(folder_path, f"zakupki_{date_str}_{file_number:02d}.xlsx")
+    return filename
 
 def get_date_range(args):
     now = datetime.now().date()
