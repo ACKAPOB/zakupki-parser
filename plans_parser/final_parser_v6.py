@@ -82,6 +82,15 @@ def load_inn_list(filename):
 
 def get_output_folder():
     """Создать папку output/ДД.ММ.ГГГГ_NN/ и вернуть путь"""
+    # Проверяем переменную окружения от run_all.py
+    session_dir = os.environ.get('ZAKUPKI_OUTPUT_DIR')
+    
+    if session_dir and os.path.isdir(session_dir):
+        folder_path = Path(session_dir)
+        logger.info(f"📁 Используем папку сессии: {folder_path}")
+        return folder_path, 0  # Номер не важен
+    
+    # Обычная логика для отдельного запуска
     today = datetime.now().strftime("%d.%m.%Y")
     
     pattern = f"{config.OUTPUT_DIR}/{today}_*"
@@ -102,15 +111,6 @@ def get_output_folder():
     folder_path.mkdir(parents=True, exist_ok=True)
     
     logger.info(f"📁 Папка результата: {folder_path}")
-    
-    # ✅ РЕГИСТРАЦИЯ ПАПКИ В МАНИФЕСТЕ
-    try:
-        sys.path.insert(0, str(config.BASE_DIR))
-        from folder_registry import register_folder
-        register_folder("plans", str(folder_path.resolve()))
-    except Exception as e:
-        logger.warning(f"⚠️  Не удалось зарегистрировать папку: {e}")
-    
     return folder_path, folder_number
 
 

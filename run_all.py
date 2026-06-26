@@ -1,12 +1,15 @@
 #!/usr/bin/env python3
 """
 Общий запуск всех парсеров и отправка отчётов
-Исправленная версия с поддержкой parser_extended.py
+Создаёт общую папку для всех результатов и передаёт путь парсерам
+через переменную окружения ZAKUPKI_OUTPUT_DIR
 """
 
 import subprocess
 import os
 import sys
+import re
+import glob
 from datetime import datetime
 import smtplib
 import ssl
@@ -14,11 +17,9 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from email.mime.base import MIMEBase
 from email import encoders
-import glob
 import yaml
 import logging
 
-# Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -29,7 +30,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Загрузка конфига
 try:
     with open('config.yaml', 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
@@ -38,22 +38,38 @@ except Exception as e:
     logger.error(f"❌ Ошибка загрузки конфига: {e}")
     sys.exit(1)
 
+OUTPUT_DIR = config.get('excel', {}).get('output_dir', 'output')
 
-def get_latest_file(pattern):
-    """Найти последний файл по шаблону"""
-    files = glob.glob(pattern)
-    if not files:
-        return None
-    return max(files, key=os.path.getctime)
+
+def create_session_folder():
+    """Создаёт папку для текущей сессии запуска"""
+    date_str = datetime.now().strftime("%d.%m.%Y")
+    pattern = f"{OUTPUT_DIR}/{date_str}_*"
+    existing_folders = glob.glob(pattern)
+    
+    if not existing_folders:
+        folder_number = 1
+    else:
+        numbers = []
+        for folder in existing_folders:
+            match = re.search(r'(\d{2}\.\d{2}\.\d{4})_(\d+)', folder)
+            if match:
+                numbers.append(int(match.group(2)))
+        folder_number = max(numbers) + 1 if numbers else 1
+    
+    folder_name = f"{date_str}_{folder_number:02d}"
+    folder_path = os.path.abspath(os.path.join(OUTPUT_DIR, folder_name))
+    os.makedirs(folder_path, exist_ok=True)
+    
+    logger.info(f"📁 Создана папка сессии: {folder_path}")
+    return folder_path
 
 
 def send_email(subject, body, attachments):
-    """Отправка письма с вложениями"""
     msg = MIMEMultipart()
     msg['From'] = config['email']['sender_email']
     msg['To'] = config['email']['recipient_email']
     msg['Subject'] = subject
-    
     msg.attach(MIMEText(body, 'plain', 'utf-8'))
     
     for filepath in attachments:
@@ -66,112 +82,57 @@ def send_email(subject, body, attachments):
                 part.add_header('Content-Disposition', f'attachment; filename="{filename}"')
                 msg.attach(part)
                 logger.info(f"📎 Добавлен файл: {filename}")
-        else:
-            logger.warning(f"⚠️  Файл не найден: {filepath}")
     
-    try:
-        context = ssl.create_default_context()
-        with smtplib.SMTP_SSL(config['email']['smtp_server'], config['email']['smtp_port'], context=context) as server:
-            server.login(config['email']['sender_email'], config['email']['sender_password'])
-            server.send_message(msg)
-        logger.info("✅ Письмо отправлено")
-    except Exception as e:
-        logger.error(f"❌ Ошибка отправки письма: {e}")
-        raise
+    context = ssl.create_default_context()
+    with smtplib.SMTP_SSL(config['email']['smtp_server'], config['email']['smtp_port'], context=context) as server:
+        server.login(config['email']['sender_email'], config['email']['sender_password'])
+        server.send_message(msg)
+    logger.info("✅ Письмо отправлено")
 
 
-def run_parser(name, command, timeout=3600):
-    """Запуск парсера с обработкой ошибок"""
+def run_parser_realtime(name, command, env, timeout=3600):
+    """Запуск парсера с выводом в реальном времени"""
     logger.info(f"\n{'='*70}")
     logger.info(f"🚀 Запуск: {name}")
-    logger.info(f"{'='*70}")
+    logger.info(f"{'='*70}\n")
     
     try:
-        result = subprocess.run(
+        process = subprocess.Popen(
             command,
             cwd='/opt/zakupki-service',
-            capture_output=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
             text=True,
-            timeout=timeout
+            bufsize=1,
+            universal_newlines=True,
+            env=env  # ← Передаём окружение с путём к папке
         )
         
-        if result.stdout:
-            logger.info(result.stdout)
+        start_time = datetime.now()
+        for line in process.stdout:
+            line = line.rstrip()
+            if line:
+                logger.info(line)
+            
+            elapsed = (datetime.now() - start_time).total_seconds()
+            if elapsed > timeout:
+                logger.error(f"❌ Превышен таймаут ({timeout}с)")
+                process.kill()
+                return False
         
-        if result.stderr:
-            logger.warning(f"⚠️  Ошибки/предупреждения:\n{result.stderr}")
+        process.wait()
         
-        if result.returncode == 0:
-            logger.info(f"✅ {name} завершён успешно")
+        if process.returncode == 0:
+            logger.info(f"\n✅ {name} завершён успешно")
             return True
         else:
-            logger.error(f"❌ {name} завершён с кодом {result.returncode}")
+            logger.error(f"\n❌ {name} завершён с кодом {process.returncode}")
             return False
             
-    except subprocess.TimeoutExpired:
-        logger.error(f"❌ {name} превысил таймаут ({timeout}с)")
-        return False
     except Exception as e:
         logger.error(f"❌ Ошибка запуска {name}: {e}")
         return False
 
-
-def find_all_output_files():
-    """Найти файлы результатов через манифест"""
-    try:
-        sys.path.insert(0, '/opt/zakupki-service')
-        from folder_registry import get_today_folders, clear_today
-        
-        folders = get_today_folders()
-        
-        if not folders:
-            logger.warning("️  Манифест пуст — ищем файлы по старому методу")
-            return find_files_by_glob()
-        
-        logger.info(f"📋 Найдено записей в манифесте: {len(folders)}")
-        
-        attachments = []
-        for parser_name, folder_path in folders.items():
-            logger.info(f"   📁 {parser_name}: {folder_path}")
-            
-            if not os.path.exists(folder_path):
-                logger.warning(f"      ️  Папка не существует!")
-                continue
-            
-            for f in glob.glob(f"{folder_path}/*.xlsx"):
-                if os.path.exists(f):
-                    attachments.append(f)
-                    logger.info(f"       Найден: {os.path.basename(f)}")
-        
-        # Очищаем манифест после сбора файлов
-        clear_today()
-        
-        return attachments
-        
-    except Exception as e:
-        logger.error(f"❌ Ошибка чтения манифеста: {e}")
-        logger.warning("⚠️  Используем резервный метод поиска")
-        return find_files_by_glob()
-
-
-def find_files_by_glob():
-    """Резервный метод: поиск файлов по glob"""
-    date_str = datetime.now().strftime("%d.%m.%Y")
-    pattern = f"output/{date_str}_*"
-    folders = glob.glob(pattern)
-    
-    if not folders:
-        return []
-    
-    folders.sort(key=os.path.getctime, reverse=True)
-    
-    attachments = []
-    for folder in folders:
-        for f in glob.glob(f"{folder}/*.xlsx"):
-            if os.path.exists(f):
-                attachments.append(f)
-    
-    return attachments
 
 def main():
     start_time = datetime.now()
@@ -181,52 +142,64 @@ def main():
     logger.info(f"Время запуска: {start_time.strftime('%d.%m.%Y %H:%M:%S')}")
     logger.info("=" * 70)
     
+    # === ШАГ 0: Создаём общую папку для сессии ===
+    session_folder = create_session_folder()
+    
+    # === Готовим окружение для парсеров ===
+    env = os.environ.copy()
+    env['ZAKUPKI_OUTPUT_DIR'] = session_folder
+    logger.info(f"🔧 Переменная ZAKUPKI_OUTPUT_DIR={session_folder}")
+    
     results = {
         'parser': False,
         'plans': False,
         'extended': False
     }
     
-    # 1. Запуск парсера закупок
+    # 1. Парсер закупок
     logger.info(f"\n[1/4] Запуск парсера закупок...")
-    results['parser'] = run_parser(
+    results['parser'] = run_parser_realtime(
         "Парсер закупок",
         [sys.executable, 'parser.py', '-y', str(config['parser']['default_year'])],
-        timeout=1800  # 30 минут
+        env=env,
+        timeout=1800
     )
     
-    # 2. Запуск парсера планов-графиков
+    # 2. Парсер планов-графиков
     logger.info(f"\n[2/4] Запуск парсера планов-графиков...")
-    results['plans'] = run_parser(
+    results['plans'] = run_parser_realtime(
         "Парсер планов-графиков",
-        [sys.executable, 'plans_parser/final_parser_v6.py', '--year', str(config['parser']['default_year'])],
-        timeout=3600  # 60 минут (сбор деталей долгий)
+        [sys.executable, 'plans_parser/final_parser_v6.py', '--year', str(config['plans_parser']['default_year'])],
+        env=env,
+        timeout=3600
     )
     
-    # 3. Запуск расширенного парсера закупок
+    # 3. Расширенный парсер закупок
     logger.info(f"\n[3/4] Запуск расширенного парсера закупок с деталями лотов...")
-    results['extended'] = run_parser(
+    results['extended'] = run_parser_realtime(
         "Расширенный парсер закупок",
-        [sys.executable, 'parser_extended.py', '-y', str(config['parser']['default_year'])],
-        timeout=5400  # 90 минут (сбор деталей лотов очень долгий)
+        [sys.executable, 'parser_extended.py', '-y', str(config['parser_extended']['default_year'])],
+        env=env,
+        timeout=5400
     )
     
-    # 4. Поиск файлов
-    logger.info(f"\n[4/4] Поиск файлов для отправки...")
-    attachments = find_all_output_files()
+    # 4. Сбор файлов из папки сессии
+    logger.info(f"\n[4/5] Сбор файлов из папки сессии...")
+    logger.info(f"📁 Папка: {session_folder}")
+    
+    attachments = sorted(glob.glob(f"{session_folder}/*.xlsx"))
     
     if not attachments:
-        logger.error(" Файлы не найдены!")
-        logger.error("Проверь логи парсеров:")
-        logger.error("  - parser.py")
-        logger.error("  - plans_parser/final_parser_v6.py")
-        logger.error("  - parser_extended.py")
+        logger.error("❌ Файлы не найдены в папке сессии!")
         return
     
-    # 5. Отправка письма
-    logger.info(f"\n Отправка {len(attachments)} файлов на почту...")
+    logger.info(f"📊 Найдено файлов: {len(attachments)}")
+    for f in attachments:
+        logger.info(f"   - {os.path.basename(f)}")
     
-    # Формируем тело письма
+    # 5. Отправка письма
+    logger.info(f"\n[5/5] Отправка {len(attachments)} файлов на почту...")
+    
     body_lines = [
         f"Отчеты сформированы: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}",
         f"Время выполнения: {datetime.now() - start_time}",
@@ -235,6 +208,8 @@ def main():
         f"  - Парсер закупок: {'✅ Успешно' if results['parser'] else '❌ Ошибка'}",
         f"  - Парсер планов: {'✅ Успешно' if results['plans'] else '❌ Ошибка'}",
         f"  - Расширенный парсер: {'✅ Успешно' if results['extended'] else '❌ Ошибка'}",
+        "",
+        f"Всего файлов: {len(attachments)}",
         "",
         "Приложены файлы:"
     ]
@@ -258,24 +233,12 @@ def main():
     logger.info(f"   Начало: {start_time.strftime('%d.%m.%Y %H:%M:%S')}")
     logger.info(f"   Конец:  {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     logger.info(f"   Длительность: {datetime.now() - start_time}")
-    logger.info(f"   Парсер закупок: {'✅' if results['parser'] else ''}")
+    logger.info(f"   Парсер закупок: {'✅' if results['parser'] else '❌'}")
     logger.info(f"   Парсер планов: {'✅' if results['plans'] else '❌'}")
     logger.info(f"   Расширенный парсер: {'✅' if results['extended'] else '❌'}")
     logger.info(f"   Файлов отправлено: {len(attachments)}")
+    logger.info(f"   Папка сессии: {session_folder}")
     logger.info(f"{'='*70}")
-    
-    # Проверяем, все ли парсеры отработали успешно
-    if all(results.values()):
-        logger.info("\n🎉 Все парсеры отработали успешно!")
-    else:
-        logger.warning("\n⚠️  Некоторые парсеры завершились с ошибками")
-        logger.warning("Проверь логи:")
-        if not results['parser']:
-            logger.warning("  - parser.py")
-        if not results['plans']:
-            logger.warning("  - plans_parser/final_parser_v6.py")
-        if not results['extended']:
-            logger.warning("  - parser_extended.py")
 
 
 if __name__ == "__main__":

@@ -52,15 +52,16 @@ HEADERS = {
 BASE_URL = "https://zakupki.gov.ru"
 SEARCH_URL = "https://zakupki.gov.ru/epz/order/extendedsearch/results.html"
 
-# Задержки (секунды)
-DELAY_BETWEEN_INN = 3          # Между ИНН
-DELAY_BETWEEN_PURCHASES = 1    # Между закупками
-DELAY_BETWEEN_LOTS = 1         # Между лотами
-DELAY_RETRY = 5                # Перед повторной попыткой
-MAX_RETRIES = 3                # Максимум попыток
-REQUEST_TIMEOUT = 30           # Таймаут запроса (сек)
+# Настройки из конфига
+ext_config = CONFIG.get('parser_extended', {})
+DELAY_BETWEEN_INN = ext_config.get('delay_between_inn', 3)
+DELAY_BETWEEN_PURCHASES = ext_config.get('delay_between_purchases', 1)
+DELAY_BETWEEN_LOTS = ext_config.get('delay_between_lots', 1)
+DELAY_RETRY = ext_config.get('delay_retry', 5)
+MAX_RETRIES = ext_config.get('max_retries', 3)
+REQUEST_TIMEOUT = ext_config.get('request_timeout', 30)
 
-# Создаём папку для результатов
+# Создаём папку для результатов (из общего конфига)
 OUTPUT_DIR = CONFIG.get('excel', {}).get('output_dir', 'output')
 os.makedirs(OUTPUT_DIR, exist_ok=True)
 
@@ -100,7 +101,16 @@ def parse_arguments():
 
 
 def get_output_folder():
-    """Создаёт папку результата и возвращает путь"""
+    """Создаёт папку результата. Если задана ZAKUPKI_OUTPUT_DIR - пишет туда."""
+    # Проверяем переменную окружения от run_all.py
+    session_dir = os.environ.get('ZAKUPKI_OUTPUT_DIR')
+    
+    if session_dir and os.path.isdir(session_dir):
+        folder_path = session_dir
+        logger.info(f"📁 Используем папку сессии: {folder_path}")
+        return folder_path, 0  # Номер не важен
+    
+    # Обычная логика для отдельного запуска
     now = datetime.now()
     date_str = now.strftime("%d.%m.%Y")
     
@@ -122,14 +132,6 @@ def get_output_folder():
     os.makedirs(folder_path, exist_ok=True)
     
     logger.info(f"📁 Папка результата: {folder_path}")
-    
-    # ✅ РЕГИСТРАЦИЯ ПАПКИ В МАНИФЕСТЕ
-    try:
-        from folder_registry import register_folder
-        register_folder("extended", os.path.abspath(folder_path))
-    except Exception as e:
-        logger.warning(f"⚠️  Не удалось зарегистрировать папку: {e}")
-    
     return folder_path, folder_number
 
 

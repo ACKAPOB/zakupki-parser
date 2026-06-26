@@ -1,29 +1,40 @@
 #!/usr/bin/env python3
 """
 Конфигурация парсера планов-графиков
-Все настройки, которые могут меняться при запуске на разных серверах
+Читает настройки из общего config.yaml в корне проекта
 """
 
 import os
+import sys
 from pathlib import Path
+import yaml
 
 # ===== ПУТИ =====
-# Базовая директория проекта (где лежит этот конфиг)
-BASE_DIR = Path(__file__).parent
+# Базовая директория проекта (корень проекта, не plans_parser)
+BASE_DIR = Path(__file__).parent.parent
 
-# Директория для выходных файлов
-OUTPUT_DIR = BASE_DIR / "output"
+# Загружаем общий конфиг из корня проекта
+try:
+    config_path = BASE_DIR / 'config.yaml'
+    with open(config_path, 'r', encoding='utf-8') as f:
+        general_config = yaml.safe_load(f)
+except Exception as e:
+    print(f"⚠️  Не удалось загрузить config.yaml: {e}")
+    general_config = {}
 
-# Файл со списком ИНН
-#INN_LIST_FILE = BASE_DIR / "inn_list.txt"
-INN_LIST_FILE = BASE_DIR.parent / "inn_list.txt"
+# Директория для выходных файлов (из общего конфига)
+OUTPUT_DIR = BASE_DIR / general_config.get('excel', {}).get('output_dir', 'output')
+
+# Файл со списком ИНН (в корне проекта)
+INN_LIST_FILE = BASE_DIR / "inn_list.txt"
 
 # Файл лога (будет создаваться в папке с результатом)
 LOG_FILE_NAME = "parser.log"
 
 # ===== НАСТРОЙКИ ПОИСКА =====
-# Год плана по умолчанию
-DEFAULT_YEAR = 2026
+# Год плана по умолчанию (из конфига)
+plans_config = general_config.get('plans_parser', {})
+DEFAULT_YEAR = plans_config.get('default_year', 2026)
 
 # Тип ФЗ: "44", "223", "all"
 DEFAULT_FZ = "all"
@@ -35,40 +46,24 @@ MAX_SEARCH_PAGES = 5
 SEARCH_PAGE_SIZE = 50
 
 # ===== НАСТРОЙКИ ПАРСИНГА =====
-# Максимум страниц пагинации внутри плана
-MAX_PAGINATION_PAGES = 50
+# Максимум страниц пагинации внутри плана (из конфига)
+MAX_PAGINATION_PAGES = plans_config.get('max_pagination_pages', 50)
 
-# Собирать детальные данные по позициям
-COLLECT_DETAILS = True
+# Собирать детальные данные по позициям (из конфига)
+COLLECT_DETAILS = plans_config.get('collect_details', True)
 
-# Запускать браузер с интерфейсом (False = headless)
-HEADLESS = True
+# Запускать браузер с интерфейсом (из конфига)
+HEADLESS = plans_config.get('headless', True)
 
-# ===== ЗАДЕРЖКИ (в секундах) =====
-# Между организациями
-DELAY_BETWEEN_INN = 5
-
-# Между планами одной организации
-DELAY_BETWEEN_PLANS = 3
-
-# Между страницами пагинации
-DELAY_BETWEEN_PAGES = 2
-
-# После сбора деталей позиции
-DELAY_AFTER_POSITION = 1.5
-
-# Между страницами поиска планов
+# ===== ЗАДЕРЖКИ (в секундах) - из конфига =====
+DELAY_BETWEEN_INN = plans_config.get('delay_between_inn', 5)
+DELAY_BETWEEN_PLANS = plans_config.get('delay_between_plans', 3)
+DELAY_BETWEEN_PAGES = plans_config.get('delay_between_pages', 2)
+DELAY_AFTER_POSITION = plans_config.get('delay_after_position', 1.5)
 DELAY_BETWEEN_SEARCH_PAGES = 1
-
-# Перед повторной попыткой загрузки
 DELAY_RETRY = 5
-
-# ===== ПОВТОРНЫЕ ПОПЫТКИ =====
-# Максимум попыток загрузки плана
-MAX_RETRIES = 3
-
-# Таймаут загрузки страницы (мс)
-PAGE_LOAD_TIMEOUT = 45000
+MAX_RETRIES = plans_config.get('max_retries', 3)
+PAGE_LOAD_TIMEOUT = plans_config.get('page_load_timeout', 45000)
 
 # ===== РАЗМЕР БРАУЗЕРА =====
 BROWSER_WIDTH = 1920

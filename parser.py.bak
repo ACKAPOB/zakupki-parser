@@ -11,7 +11,6 @@ import argparse
 import json
 import time
 import yaml
-import glob
 
 import requests
 from bs4 import BeautifulSoup
@@ -63,43 +62,12 @@ def parse_arguments():
 
 
 def get_output_filename():
-    """Генерирует имя файла. Если задана ZAKUPKI_OUTPUT_DIR - пишет туда."""
-    now = datetime.now()
-    date_str = now.strftime("%d.%m.%Y")
-    
-    # Проверяем переменную окружения от run_all.py
-    session_dir = os.environ.get('ZAKUPKI_OUTPUT_DIR')
-    
-    if session_dir and os.path.isdir(session_dir):
-        # Режим run_all.py: пишем в указанную папку
-        folder_path = session_dir
-        print(f"📁 Используем папку сессии: {folder_path}")
-    else:
-        # Режим отдельного запуска: создаём свою папку
-        pattern = f"output/{date_str}_*"
-        existing_folders = glob.glob(pattern)
-        
-        if not existing_folders:
-            folder_number = 1
-        else:
-            numbers = []
-            for folder in existing_folders:
-                match = re.search(r'(\d{2}\.\d{2}\.\d{4})_(\d+)', folder)
-                if match:
-                    numbers.append(int(match.group(2)))
-            folder_number = max(numbers) + 1 if numbers else 1
-        
-        folder_name = f"{date_str}_{folder_number:02d}"
-        folder_path = os.path.join("output", folder_name)
-        os.makedirs(folder_path, exist_ok=True)
-        print(f"📁 Создана папка: {folder_path}")
-    
-    # Имя файла с номером внутри папки
-    existing_files = [f for f in os.listdir(folder_path) if f.startswith(f"zakupki_{date_str}_")]
-    file_number = len(existing_files) + 1
-    
-    filename = os.path.join(folder_path, f"zakupki_{date_str}_{file_number:02d}.xlsx")
-    return filename
+    date_str = datetime.now().strftime("%d.%m.%Y")
+    output_dir = CONFIG['excel']['output_dir']
+    pattern = f"zakupki_{date_str}_"
+    existing = [f for f in os.listdir(output_dir) if f.startswith(pattern) and f.endswith('.xlsx')]
+    next_num = len(existing) + 1
+    return os.path.join(output_dir, f"zakupki_{date_str}_{next_num:02d}.xlsx")
 
 
 def get_date_range(args):
