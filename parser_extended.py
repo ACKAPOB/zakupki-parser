@@ -363,13 +363,20 @@ def search_purchases(inn, date_from, date_to, page_size, max_pages, delay):
             all_purchases.extend(page_purchases)
             logger.info(f"   Страница {page}: {len(page_purchases)} записей (всего {len(all_purchases)})")
             
-            pagination = soup.find("div", class_="search-results__pagination")
-            next_link = None
-            if pagination:
-                next_link = pagination.find("a", title="Следующая страница")
-            
-            if not next_link:
+            # Проверяем наличие следующей страницы
+            if len(page_purchases) < page_size:
                 break
+            if not page_purchases:
+                break
+            
+            pagination = soup.find("ul", class_="pages") or soup.find("div", class_="search-results__pagination")
+            if pagination:
+                import re as re_mod
+                next_js = pagination.find('a', href=lambda h: h and re_mod.search(rf'goToPage\({page + 1}\)', str(h)))
+                if not next_js:
+                    next_link = pagination.find('a', href=lambda h: h and f'pageNumber={page + 1}' in str(h))
+                    if not next_link:
+                        break
             
             page += 1
             

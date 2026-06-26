@@ -300,31 +300,13 @@ def search_purchases(inn, date_from, date_to, page_size, max_pages, delay):
             all_purchases.extend(page_purchases)
             print(f"  Страница {page}: {len(page_purchases)} записей (всего {len(all_purchases)})")
             
-                        # Проверяем наличие следующей страницы
-            # Сайт использует JavaScript пагинацию (goToPage), поэтому ищем по-другому
-            
-            # Способ 1: Если на странице меньше записей чем page_size - это последняя
-            if len(page_purchases) < page_size:
-                print(f"  Последняя страница (записей: {len(page_purchases)} < {page_size})")
-                break
-            
-            # Способ 2: Если закупок нет - останавливаемся
-            if not page_purchases:
-                print(f"  Закупок больше нет")
-                break
-            
-            # Способ 3: Проверяем пагинацию по классу 'pages' (новый класс сайта)
-            pagination = soup.find("ul", class_="pages") or soup.find("div", class_="search-results__pagination")
+            pagination = soup.find("div", class_="search-results__pagination")
+            next_link = None
             if pagination:
-                # Ищем ссылку на следующую страницу через JavaScript
-                import re
-                next_js = pagination.find('a', href=lambda h: h and re.search(rf'goToPage\({page + 1}\)', str(h)))
-                if not next_js:
-                    # Ищем обычную ссылку с pageNumber
-                    next_link = pagination.find('a', href=lambda h: h and f'pageNumber={page + 1}' in str(h))
-                    if not next_link:
-                        print(f"  Ссылка на страницу {page + 1} не найдена, останавливаемся")
-                        break
+                next_link = pagination.find("a", title="Следующая страница")
+            
+            if not next_link:
+                break
             
             page += 1
             
