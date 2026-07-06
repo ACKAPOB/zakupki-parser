@@ -743,7 +743,7 @@ def main():
     
     with sync_playwright() as p:
         browser = p.chromium.launch(headless=(not args.no_headless and config.HEADLESS))
-        context = browser.new_context(viewport={"width": config.BROWSER_WIDTH, "height": config.BROWSER_HEIGHT})
+        context = browser.new_context(viewport={"width": config.BROWSER_WIDTH, "height": config.BROWSER_HEIGHT}, ignore_https_errors=True)
         page = context.new_page()
         
         for idx, item in enumerate(inn_list, 1):

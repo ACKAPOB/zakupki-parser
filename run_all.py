@@ -90,7 +90,7 @@ def send_email(subject, body, attachments):
     logger.info("✅ Письмо отправлено")
 
 
-def run_parser_realtime(name, command, env, timeout=3600):
+def run_parser_realtime(name, command, env, timeout=7200):
     """Запуск парсера с выводом в реальном времени"""
     logger.info(f"\n{'='*70}")
     logger.info(f"🚀 Запуск: {name}")
@@ -171,7 +171,7 @@ def main():
         "Парсер планов-графиков",
         [sys.executable, 'plans_parser/final_parser_v6.py', '--year', str(config['plans_parser']['default_year'])],
         env=env,
-        timeout=3600
+        timeout=7200
     )
     
     # 3. Расширенный парсер закупок
@@ -184,7 +184,7 @@ def main():
     )
     
     # 4. Сбор файлов из папки сессии
-    logger.info(f"\n[4/5] Сбор файлов из папки сессии...")
+    logger.info(f"\n[4/6] Сбор файлов из папки сессии...")
     logger.info(f"📁 Папка: {session_folder}")
     
     attachments = sorted(glob.glob(f"{session_folder}/*.xlsx"))
@@ -197,8 +197,35 @@ def main():
     for f in attachments:
         logger.info(f"   - {os.path.basename(f)}")
     
+    # 4.1. Сравнение файлов планов-графиков
+    logger.info(f"\n[4.1/6] Сравнение файлов планов-графиков...")
+    today_str = datetime.now().strftime("%d.%m.%Y")
+    changes_txt_path = os.path.join(session_folder, f"changes_{today_str}.txt")
+    changes_body_text = ""
+    
+    try:
+        res = subprocess.run(
+            [sys.executable, 'compare_plans.py', '--output-file', changes_txt_path],
+            cwd='/opt/zakupki-service',
+            capture_output=True, text=True, timeout=120
+        )
+        
+        if res.returncode == 0 and os.path.exists(changes_txt_path):
+            attachments.append(changes_txt_path)
+            logger.info(f"✅ Файл изменений создан: {os.path.basename(changes_txt_path)}")
+            
+            # Читаем содержимое для вставки в тело письма
+            with open(changes_txt_path, 'r', encoding='utf-8') as cf:
+                changes_body_text = "\n" + cf.read()
+        else:
+            changes_body_text = "\n⚠️ Не удалось сформировать отчёт об изменениях."
+            logger.warning(f"⚠️ Ошибка сравнения планов: {res.stderr}")
+    except Exception as e:
+        changes_body_text = f"\n⚠️ Ошибка запуска сравнения: {e}"
+        logger.error(f"❌ Ошибка: {e}")
+    
     # 5. Отправка письма
-    logger.info(f"\n[5/5] Отправка {len(attachments)} файлов на почту...")
+    logger.info(f"\n[5/6] Отправка {len(attachments)} файлов на почту...")
     
     body_lines = [
         f"Отчеты сформированы: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}",
@@ -216,6 +243,13 @@ def main():
     
     for f in attachments:
         body_lines.append(f"  - {os.path.basename(f)}")
+    
+    # Добавляем блок изменений в конец письма
+    if changes_body_text:
+        body_lines.append("\n" + "="*40)
+        body_lines.append("ОТЧЁТ ОБ ИЗМЕНЕНИЯХ В ПЛАНАХ")
+        body_lines.append("="*40)
+        body_lines.append(changes_body_text)
     
     body = "\n".join(body_lines)
     subject = f"Отчет по закупкам от {datetime.now().strftime('%d.%m.%Y')}"
