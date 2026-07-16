@@ -148,25 +148,19 @@ def main():
     # === Готовим окружение для парсеров ===
     env = os.environ.copy()
     env['ZAKUPKI_OUTPUT_DIR'] = session_folder
+    env['REQUESTS_CA_BUNDLE'] = '/etc/ssl/certs/ca-certificates.crt'
+    env['SSL_CERT_FILE'] = '/etc/ssl/certs/ca-certificates.crt'
     logger.info(f"🔧 Переменная ZAKUPKI_OUTPUT_DIR={session_folder}")
+    logger.info(f"🔧 SSL сертификаты: {env['REQUESTS_CA_BUNDLE']}")
     
     results = {
-        'parser': False,
+        
         'plans': False,
         'extended': False
     }
     
-    # 1. Парсер закупок
-    logger.info(f"\n[1/4] Запуск парсера закупок...")
-    results['parser'] = run_parser_realtime(
-        "Парсер закупок",
-        [sys.executable, 'parser.py', '-y', str(config['parser']['default_year'])],
-        env=env,
-        timeout=1800
-    )
-    
-    # 2. Парсер планов-графиков
-    logger.info(f"\n[2/4] Запуск парсера планов-графиков...")
+    # 1. Парсер планов-графиков
+    logger.info(f"\n[1/3] Запуск парсера планов-графиков...")
     results['plans'] = run_parser_realtime(
         "Парсер планов-графиков",
         [sys.executable, 'plans_parser/final_parser_v6.py', '--year', str(config['plans_parser']['default_year'])],
@@ -175,7 +169,7 @@ def main():
     )
     
     # 3. Расширенный парсер закупок
-    logger.info(f"\n[3/4] Запуск расширенного парсера закупок с деталями лотов...")
+    logger.info(f"\n[2/3] Запуск расширенного парсера закупок с деталями лотов...")
     results['extended'] = run_parser_realtime(
         "Расширенный парсер закупок",
         [sys.executable, 'parser_extended.py', '-y', str(config['parser_extended']['default_year'])],
@@ -184,7 +178,7 @@ def main():
     )
     
     # 4. Сбор файлов из папки сессии
-    logger.info(f"\n[4/6] Сбор файлов из папки сессии...")
+    logger.info(f"\n[3/3] Сбор файлов из папки сессии...")
     logger.info(f"📁 Папка: {session_folder}")
     
     attachments = sorted(glob.glob(f"{session_folder}/*.xlsx"))
@@ -198,7 +192,7 @@ def main():
         logger.info(f"   - {os.path.basename(f)}")
     
     # 4.1. Сравнение файлов планов-графиков
-    logger.info(f"\n[4.1/6] Сравнение файлов планов-графиков...")
+    logger.info(f"\n[3.1/3] Сравнение файлов планов-графиков...")
     today_str = datetime.now().strftime("%d.%m.%Y")
     changes_txt_path = os.path.join(session_folder, f"changes_{today_str}.txt")
     changes_body_text = ""
@@ -225,14 +219,13 @@ def main():
         logger.error(f"❌ Ошибка: {e}")
     
     # 5. Отправка письма
-    logger.info(f"\n[5/6] Отправка {len(attachments)} файлов на почту...")
+    logger.info(f"\n[4/3] Отправка {len(attachments)} файлов на почту...")
     
     body_lines = [
         f"Отчеты сформированы: {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}",
         f"Время выполнения: {datetime.now() - start_time}",
         "",
         "Результаты парсеров:",
-        f"  - Парсер закупок: {'✅ Успешно' if results['parser'] else '❌ Ошибка'}",
         f"  - Парсер планов: {'✅ Успешно' if results['plans'] else '❌ Ошибка'}",
         f"  - Расширенный парсер: {'✅ Успешно' if results['extended'] else '❌ Ошибка'}",
         "",
@@ -267,7 +260,6 @@ def main():
     logger.info(f"   Начало: {start_time.strftime('%d.%m.%Y %H:%M:%S')}")
     logger.info(f"   Конец:  {datetime.now().strftime('%d.%m.%Y %H:%M:%S')}")
     logger.info(f"   Длительность: {datetime.now() - start_time}")
-    logger.info(f"   Парсер закупок: {'✅' if results['parser'] else '❌'}")
     logger.info(f"   Парсер планов: {'✅' if results['plans'] else '❌'}")
     logger.info(f"   Расширенный парсер: {'✅' if results['extended'] else '❌'}")
     logger.info(f"   Файлов отправлено: {len(attachments)}")
