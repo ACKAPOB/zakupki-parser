@@ -183,6 +183,11 @@ def main():
     
     attachments = sorted(glob.glob(f"{session_folder}/*.xlsx"))
     
+    # Добавляем лог парсера планов, если он существует
+    parser_log = os.path.join(session_folder, "parser.log")
+    if os.path.exists(parser_log):
+        attachments.append(parser_log)
+    
     if not attachments:
         logger.error("❌ Файлы не найдены в папке сессии!")
         return
