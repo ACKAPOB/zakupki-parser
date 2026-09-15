@@ -177,6 +177,9 @@ def extract_plan_info(block):
             if name_block: record["name"] = re.sub(r"\s+", " ", name_block.text.strip())
             href_block = body.find("div", class_="registry-entry__body-href")
             if href_block:
+                inn_match = re.search(r"ИНН\s*:\s*(\d+)|(\d{10,12})", href_block.text)
+                if inn_match:
+                    record["inn"] = inn_match.group(1) or inn_match.group(2)
                 link_tag = href_block.find("a")
                 if link_tag: record["organization"] = link_tag.text.strip()
         right_block = block.find("div", class_="registry-entry__right-block")
@@ -220,9 +223,12 @@ def search_plans(search_query, year, fz_type="all", page_size=None, max_pages=No
             page_plans = []
             for block in blocks:
                 plan = extract_plan_info(block)
-                if plan and plan.get("number") not in found:
-                    found.add(plan.get("number"))
-                    page_plans.append(plan)
+                if plan:
+                    if plan.get("inn") and plan.get("inn") != search_query:
+                        continue
+                    if plan.get("number") not in found:
+                        found.add(plan.get("number"))
+                        page_plans.append(plan)
             print(f"записей: {len(page_plans)}")
             all_plans.extend(page_plans)
             pagination = soup.find("div", class_="search-results__pagination")

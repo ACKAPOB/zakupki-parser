@@ -19,6 +19,40 @@ import requests
 from bs4 import BeautifulSoup
 import openpyxl
 from openpyxl.styles import Font, PatternFill, Alignment
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+import requests
+import time
+import random
+
+original_get = requests.get
+original_post = requests.post
+
+USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/128.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:130.0) Gecko/20100101 Firefox/130.0"
+]
+
+def smart_get(*args, **kwargs):
+    time.sleep(random.uniform(1.0, 2.5))  # Случайная пауза для обхода WAF
+    if "headers" in kwargs and kwargs["headers"]:
+        kwargs["headers"] = kwargs["headers"].copy()
+        kwargs["headers"]["User-Agent"] = random.choice(USER_AGENTS)
+    return original_get(*args, **{**kwargs, "verify": False})
+
+def smart_post(*args, **kwargs):
+    time.sleep(random.uniform(1.0, 2.5))
+    if "headers" in kwargs and kwargs["headers"]:
+        kwargs["headers"] = kwargs["headers"].copy()
+        kwargs["headers"]["User-Agent"] = random.choice(USER_AGENTS)
+    return original_post(*args, **{**kwargs, "verify": False})
+
+requests.get = smart_get
+requests.post = smart_post
+
+
 
 # ===== НАСТРОЙКА ЛОГИРОВАНИЯ =====
 logging.basicConfig(

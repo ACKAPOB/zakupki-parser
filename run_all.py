@@ -90,7 +90,7 @@ def send_email(subject, body, attachments):
     logger.info("✅ Письмо отправлено")
 
 
-def run_parser_realtime(name, command, env, timeout=7200):
+def run_parser_realtime(name, command, env, timeout=10800):
     """Запуск парсера с выводом в реальном времени"""
     logger.info(f"\n{'='*70}")
     logger.info(f"🚀 Запуск: {name}")
@@ -99,13 +99,12 @@ def run_parser_realtime(name, command, env, timeout=7200):
     try:
         process = subprocess.Popen(
             command,
-            cwd='/opt/zakupki-service',
+            env=env, cwd=os.getcwd(),
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
             bufsize=1,
             universal_newlines=True,
-            env=env  # ← Передаём окружение с путём к папке
         )
         
         start_time = datetime.now()
@@ -147,6 +146,8 @@ def main():
     
     # === Готовим окружение для парсеров ===
     env = os.environ.copy()
+    env['REQUESTS_CA_BUNDLE'] = '/home/igor/ca-certificates-server.crt'
+    env['SSL_CERT_FILE'] = '/home/igor/ca-certificates-server.crt'
     env['ZAKUPKI_OUTPUT_DIR'] = session_folder
     env['REQUESTS_CA_BUNDLE'] = '/etc/ssl/certs/ca-certificates.crt'
     env['SSL_CERT_FILE'] = '/etc/ssl/certs/ca-certificates.crt'
@@ -165,7 +166,7 @@ def main():
         "Парсер планов-графиков",
         [sys.executable, 'plans_parser/final_parser_v6.py', '--year', str(config['plans_parser']['default_year'])],
         env=env,
-        timeout=7200
+        timeout=10800
     )
     
     # 3. Расширенный парсер закупок
@@ -205,7 +206,7 @@ def main():
     try:
         res = subprocess.run(
             [sys.executable, 'compare_plans.py', '--output-file', changes_txt_path],
-            cwd='/opt/zakupki-service',
+            env=env, cwd=os.getcwd(),
             capture_output=True, text=True, timeout=120
         )
         
